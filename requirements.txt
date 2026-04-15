@@ -1,7 +1,3 @@
 streamlit
 streamlit-mic-recorder
-paddleocr
-paddlepaddle
 gTTS
-Pillow
-numpy
