@@ -2,7 +2,7 @@ import streamlit as st
 from streamlit_mic_recorder import mic_recorder
 import difflib
 
-# 1. 페이지 설정 및 모바일 최적화
+# 1. 페이지 설정 및 디자인
 st.set_page_config(page_title="무럭무럭 국어 싹트기", page_icon="🌱", layout="centered")
 
 st.markdown("""
@@ -13,7 +13,8 @@ st.markdown("""
     .result-box { background: #F2F4F4; padding: 15px; border-radius: 10px; margin-top: 15px; font-size: 1.5rem; line-height: 1.8; text-align: center; }
     .correct { color: #28B463; }
     .wrong { color: #E74C3C; text-decoration: underline; font-weight: bold; }
-    .stButton>button { width: 100%; border-radius: 10px; height: 3rem; font-weight: bold; background-color: #EBF5FB; }
+    .score-text { font-size: 1.8rem; color: #2E86C1; font-weight: bold; margin: 10px 0; }
+    .stButton>button { width: 100%; border-radius: 10px; height: 3rem; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -60,30 +61,44 @@ with c2:
 
 st.write("---")
 
-# 6. 녹음 기능
+# 6. 녹음 및 듣기 기능
 st.write("▼ 아래 버튼을 누르고 소리 내어 읽어주세요!")
 audio = mic_recorder(start_prompt="🎤 녹음 시작", stop_prompt="🛑 녹음 완료", key='recorder')
 
-# 7. 분석 결과 (틀린 부분 빨간색 표시)
 if audio:
-    st.success("✅ 녹음이 완료되었습니다!")
-    # 테스트용 입력창 (나중에 자동 인식으로 업그레이드 가능)
-    user_input = st.text_input("아이의 발음을 여기에 입력해보세요 (분석 테스트):")
+    st.write("### 🎧 내가 읽은 소리 들어보기")
+    st.audio(audio['bytes']) # 녹음된 소리를 바로 재생할 수 있는 플레이어가 생깁니다.
+
+    st.write("---")
+    # 분석을 위한 텍스트 입력 (아이의 발음을 교사가 확인하여 입력하거나, 테스트용)
+    st.write("🧐 **분석 결과 확인하기**")
+    user_input = st.text_input("아이의 발음을 여기에 적어주세요 (분석용):")
     
     if user_input:
         result_display = []
+        correct_count = 0
+        target_no_space = target_word.replace(" ", "")
+        user_no_space = user_input.replace(" ", "")
+        
+        # 글자 하나하나 비교 분석
         diff = difflib.ndiff(target_word, user_input)
         
         for char in diff:
-            if char[0] == ' ': # 맞음
+            if char[0] == ' ': # 정확히 맞음
                 result_display.append(f'<span class="correct">{char[-1]}</span>')
-            elif char[0] == '-': # 빠짐/틀림
+                if char[-1] != ' ': correct_count += 1
+            elif char[0] == '-': # 틀렸거나 빠짐
                 result_display.append(f'<span class="wrong">{char[-1]}</span>')
             elif char[0] == '+': # 더 읽음
                 result_display.append(f'<span class="wrong">{char[-1]}</span>')
 
+        # 올바르게 읽은 비율(정독률) 계산
+        total_chars = len(target_word.replace(" ", ""))
+        accuracy = min(100, int((correct_count / total_chars) * 100))
+        
+        st.markdown(f'<p class="score-text">🎯 정확도: {accuracy}%</p>', unsafe_allow_html=True)
         st.markdown(f'<div class="result-box">{"".join(result_display)}</div>', unsafe_allow_html=True)
         
-        if user_input.replace(" ", "") == target_word.replace(" ", ""):
+        if accuracy == 100:
             st.balloons()
-            st.write("### 🎉 정말 잘 읽었어요!")
+            st.success("우와! 100점이에요! 정말 잘 읽었어요!")
