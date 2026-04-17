@@ -3,94 +3,112 @@ from streamlit_mic_recorder import mic_recorder
 from gtts import gTTS
 import io
 import difflib
-import easyocr
-import numpy as np
-from PIL import Image
 
-# 페이지 설정
-st.set_page_config(page_title="무럭무럭 국어 싹트기", page_icon="🌱")
+# 1. 페이지 설정
+st.set_page_config(page_title="무럭무럭 국어 싹트기", page_icon="🌱", layout="centered")
 
-# OCR 엔진 초기화 (한글/영어)
-@st.cache_resource
-def get_reader():
-    return easyocr.Reader(['ko', 'en'])
-
-reader = get_reader()
-
-# 스타일 설정
+# 디자인 테마
 st.markdown("""
     <style>
     .stApp { background-color: #F8FBFE; }
-    .main-card { background-color: #FFFFFF; padding: 20px; border-radius: 20px; border: 3px solid #AED6F1; text-align: center; }
-    .target-text { font-size: 2.2rem !important; color: #1B4F72; font-weight: bold; }
+    .main-card { background-color: #FFFFFF; padding: 25px; border-radius: 20px; border: 3px solid #AED6F1; text-align: center; }
+    .logo-text { font-size: 2.8rem; color: #1B4F72; font-weight: bold; margin-bottom: 0px; }
+    .target-text { font-size: 2.5rem !important; color: #1B4F72; font-weight: bold; margin: 15px 0; line-height: 1.4; }
+    .practice-tag { background-color: #EBF5FB; color: #2E86C1; padding: 5px 12px; border-radius: 15px; font-size: 0.9rem; font-weight: bold; }
+    .result-box { background: #FFFFFF; padding: 15px; border-radius: 15px; border: 1px solid #D5DBDB; margin-top: 15px; font-size: 1.3rem; text-align: center; }
     .correct { color: #28B463; }
     .wrong { color: #E74C3C; text-decoration: underline; font-weight: bold; }
+    .star-rating { font-size: 2.5rem; color: #F1C40F; margin: 10px 0; }
     </style>
     """, unsafe_allow_html=True)
 
-if 'custom_text' not in st.session_state: st.session_state.custom_text = ""
+# 데이터 초기화
+if 'data' not in st.session_state:
+    st.session_state.data = {
+        "1단계 (단어)": ["학교", "선생님", "친구", "운동장", "우리나라"],
+        "2단계 (문장)": ["나는 학교가 좋아요.", "하늘에 무지개가 떴어요."],
+        "3단계 (문단)": ["오늘은 즐거운 체육 시간입니다. 운동장에서 친구들과 뛰어놀았습니다."],
+        "📷 사진으로 만들기": []
+    }
+if 'idx' not in st.session_state: st.session_state.idx = 0
+if 'level' not in st.session_state: st.session_state.level = "1단계 (단어)"
+if 'counts' not in st.session_state: st.session_state.counts = {}
 
-st.title("🌱 국어 싹트기: 사진 학습")
+# --- 로고 및 상단 ---
+st.markdown('<p class="logo-text" style="text-align:center;">🌱 국어 싹트기</p>', unsafe_allow_html=True)
 
-# --- 단계 1: 사진 찍고 글자 고르기 ---
-with st.expander("📸 1단계: 교과서 사진 찍어서 글자 가져오기", expanded=True):
-    uploaded_file = st.file_uploader("교과서 사진을 올려주세요", type=['jpg', 'jpeg', 'png'])
-    
-    if uploaded_file:
-        image = Image.open(uploaded_file)
-        st.image(image, caption="선택한 사진", use_container_width=True)
-        
-        if st.button("🔍 사진 속 글자 모두 읽기"):
-            with st.spinner("글자를 찾는 중입니다..."):
-                img_np = np.array(image)
-                results = reader.readtext(img_np)
-                # 인식된 글자들을 문장 단위로 합침
-                full_text = " ".join([res[1] for res in results])
-                st.session_state.all_lines = [res[1] for res in results]
-                st.success("글자를 모두 찾아냈습니다!")
+# 사이드바
+st.sidebar.title("📖 학습 메뉴")
+new_level = st.sidebar.selectbox("단계를 골라보세요", list(st.session_state.data.keys()), index=list(st.session_state.data.keys()).index(st.session_state.level))
 
-        if 'all_lines' in st.session_state:
-            st.write("▼ **읽고 싶은 문장을 클릭하세요!**")
-            # 아이들이 드래그 대신 문장을 선택할 수 있게 버튼으로 나열
-            selected_line = st.selectbox("어느 부분을 공부할까요?", st.session_state.all_lines)
-            if st.button("📖 이 문장으로 결정!"):
-                st.session_state.custom_text = selected_line
-                st.info(f"선택됨: {selected_line}")
+if new_level != st.session_state.level:
+    st.session_state.level = new_level
+    st.session_state.idx = 0
+    st.rerun()
 
-# --- 단계 2: 선택한 글자로 연습하기 ---
-if st.session_state.custom_text:
-    st.write("---")
-    target = st.session_state.custom_text
-    
+# --- 기능 1: 사진 찍어 글자 만들기 (경량화 버전) ---
+if st.session_state.level == "📷 사진으로 만들기":
+    st.subheader("📸 교과서 사진 찍기")
+    st.info("💡 서버 사양을 위해, 사진 속 글자를 직접 입력하거나 복사해서 넣어주세요!")
+    pasted_text = st.text_area("사진 속 글자를 여기에 입력하고 [저장]을 누르세요:", height=150)
+    if st.button("🚀 연습 목록에 저장"):
+        if pasted_text.strip():
+            st.session_state.data["📷 사진으로 만들기"].append(pasted_text.strip())
+            st.session_state.idx = len(st.session_state.data["📷 사진으로 만들기"]) - 1
+            st.success("저장되었습니다! 이제 위 단계에서 공부할 수 있어요.")
+            st.rerun()
+
+# --- 기능 2: 학습 화면 ---
+current_list = st.session_state.data[st.session_state.level]
+
+if not current_list:
+    st.warning("아직 등록된 문장이 없어요. 사진 단계에서 글을 추가해 보세요!")
+else:
+    target = current_list[st.session_state.idx]
+    p_id = f"{st.session_state.level}_{st.session_state.idx}"
+    count = st.session_state.counts.get(p_id, 0)
+
     st.markdown('<div class="main-card">', unsafe_allow_html=True)
-    st.write("아래 글자를 듣고 따라 읽어보세요")
+    st.markdown(f'<span class="practice-tag">🔥 {count}번째 연습</span>', unsafe_allow_html=True)
     st.markdown(f'<p class="target-text">{target}</p>', unsafe_allow_html=True)
     
-    # AI가 읽어주기 (TTS)
-    if st.button("🔊 AI 선생님 목소리 듣기"):
+    if st.button("🔊 먼저 들어보기 (쉐도우 리딩)"):
         tts = gTTS(text=target, lang='ko')
-        audio_io = io.BytesIO()
-        tts.write_to_fp(audio_io)
-        st.audio(audio_io.getvalue())
+        b = io.BytesIO()
+        tts.write_to_fp(b)
+        st.audio(b.getvalue())
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 녹음 및 분석
-    st.write("### 🎤 내 목소리 녹음하기")
-    audio = mic_recorder(start_prompt="녹음 시작", stop_prompt="녹음 완료", key='final_rec')
+    # 버튼 레이아웃
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("⬅️ 이전"):
+            st.session_state.idx = (st.session_state.idx - 1) % len(current_list)
+            st.rerun()
+    with c2:
+        if st.button("다음 ➡️"):
+            st.session_state.idx = (st.session_state.idx + 1) % len(current_list)
+            st.rerun()
+
+    st.write("---")
+    audio = mic_recorder(start_prompt="🎤 녹음 시작", stop_prompt="🛑 녹음 완료", key=f'rec_{p_id}')
 
     if audio:
+        st.session_state.counts[p_id] = count + 1
         st.audio(audio['bytes'])
-        user_in = st.text_input("아이가 읽은 내용을 입력해 분석하기 (선생님/학부모)")
+        
+        user_in = st.text_input("아이가 읽은 내용을 적어주세요 (피드백 확인용):")
         if user_in:
-            # 빨간색 오답 표시
+            # 빨간색 표시 로직
             res_html = []
             diff = difflib.ndiff(target, user_in)
             for char in diff:
                 if char[0] == ' ': res_html.append(f'<span class="correct">{char[-1]}</span>')
                 else: res_html.append(f'<span class="wrong">{char[-1]}</span>')
             
-            st.markdown(f'<div style="font-size:1.5rem; text-align:center;">{"".join(res_html)}</div>', unsafe_allow_html=True)
-            
+            # 별점 계산
             score = difflib.SequenceMatcher(None, target, user_in).ratio()
-            st.write(f"### 🎯 정확도: {int(score*100)}%")
-            if score > 0.9: st.balloons()
+            stars = int(score * 5)
+            st.markdown(f'<div class="star-rating">{"★"*stars}{"☆"*(5-stars)}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="result-box">{"".join(res_html)}</div>', unsafe_allow_html=True)
+            if stars == 5: st.balloons()
